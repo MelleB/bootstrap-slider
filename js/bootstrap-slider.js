@@ -34,15 +34,18 @@
 (function(root, factory) {
 	if(typeof define === "function" && define.amd) {
 		define(["jquery"], factory);
-	} else if(typeof module === "object" && module.exports) {
+	}
+	else if(typeof module === "object" && module.exports) {
 		var jQuery;
 		try {
 			jQuery = require("jquery");
-		} catch (err) {
+		}
+		catch (err) {
 			jQuery = null;
 		}
 		module.exports = factory(jQuery);
-	} else {
+	}
+	else {
 		root.Slider = factory(root.jQuery);
 	}
 }(this, function($) {
@@ -288,7 +291,7 @@
 			}
 
 			function getDataAttrib(element, optName) {
-				var dataName = "data-slider-" + optName;
+				var dataName = "data-slider-" + optName.replace(/_/g, '-');
 				var dataValString = element.getAttribute(dataName);
 
 				try {
@@ -579,15 +582,13 @@
 			this.handle2Keydown = this._keydown.bind(this, 1);
 			this.handle2.addEventListener("keydown", this.handle2Keydown, false);
 
+			this.mousedown = this._mousedown.bind(this);
 			if (this.touchCapable) {
 				// Bind touch handlers
-				this.mousedown = this._mousedown.bind(this);
 				this.sliderElem.addEventListener("touchstart", this.mousedown, false);
-			} else {
-				// Bind mouse handlers
-				this.mousedown = this._mousedown.bind(this);
-				this.sliderElem.addEventListener("mousedown", this.mousedown, false);
 			}
+			this.sliderElem.addEventListener("mousedown", this.mousedown, false);
+
 
 			// Bind tooltip-related handlers
 			if(this.options.tooltip === 'hide') {
@@ -659,7 +660,8 @@
 				ticks: [],
 				ticks_labels: [],
 				ticks_snap_bounds: 0,
-				scale: 'linear'
+				scale: 'linear',
+				focus: false
 			},
 
 			over: false,
@@ -673,7 +675,7 @@
 				return this.options.value[0];
 			},
 
-			setValue: function(val, triggerSlideEvent) {
+			setValue: function(val, triggerSlideEvent, triggerChangeEvent) {
 				if (!val) {
 					val = 0;
 				}
@@ -714,7 +716,7 @@
 				if(triggerSlideEvent === true) {
 					this._trigger('slide', newValue);
 				}
-				if(oldValue !== newValue) {
+				if( (oldValue !== newValue) && (triggerChangeEvent === true) ) {
 					this._trigger('change', {
 						oldValue: oldValue,
 						newValue: newValue
@@ -773,7 +775,6 @@
 				} else {
 					this.enable();
 				}
-
 				return this;
 			},
 
@@ -782,12 +783,7 @@
 			},
 
 			on: function(evt, callback) {
-				if($) {
-					this.$element.on(evt, callback);
-					this.$sliderElem.on(evt, callback);
-				} else {
-					this._bindNonQueryEventHandler(evt, callback);
-				}
+				this._bindNonQueryEventHandler(evt, callback);
 				return this;
 			},
 
@@ -1019,8 +1015,6 @@
 					return false;
 				}
 
-				this._triggerFocusOnHandle();
-
 				this.offset = this._offset(this.sliderElem);
 				this.size = this.sliderElem[this.sizePos];
 
@@ -1067,9 +1061,13 @@
 				this._trigger('slideStart', newValue);
 
 				this._setDataVal(newValue);
-				this.setValue(newValue);
+				this.setValue(newValue, false, true);
 
 				this._pauseEvent(ev);
+
+				if (this.options.focus) {
+					this._triggerFocusOnHandle(this.dragged);
+				}
 
 				return true;
 			},
@@ -1119,7 +1117,7 @@
 
 				this._trigger('slideStart', val);
 				this._setDataVal(val);
-				this.setValue(val, true);
+				this.setValue(val, true, true);
 
 				this._trigger('slideStop', val);
 				this._setDataVal(val);
@@ -1150,7 +1148,7 @@
 				this._layout();
 
 				var val = this._calculateValue(true);
-				this.setValue(val, true);
+				this.setValue(val, true, true);
 
 				return false;
 			},
@@ -1244,8 +1242,17 @@
 				if (this.touchCapable && (ev.type === 'touchstart' || ev.type === 'touchmove')) {
 					ev = ev.touches[0];
 				}
-				var percentage = (ev[this.mousePos] - this.offset[this.stylePos])*100/this.size;
-				percentage = Math.round(percentage/this.percentage[2])*this.percentage[2];
+
+				var eventPosition = ev[this.mousePos];
+				var sliderOffset = this.offset[this.stylePos];
+				var distanceToSlide = eventPosition - sliderOffset;
+				// Calculate what percent of the length the slider handle has slid
+				var percentage = (distanceToSlide / this.size) * 100;
+				percentage = Math.round(percentage / this.percentage[2]) * this.percentage[2];
+
+				// Make sure the percent is within the bounds of the slider.
+				// 0% corresponds to the 'min' value of the slide
+				// 100% corresponds to the 'max' value of the slide
 				return Math.max(0, Math.min(100, percentage));
 			},
 			_validateInputValue: function(val) {
@@ -1333,16 +1340,24 @@
 
 				element.className = newClasses.trim();
 			},
-      _offset: function (obj) {
-        var rect = obj.getBoundingClientRect(),
-          ol = rect.left,
-          ot = rect.top;
-
-        return {
-          left: ol,
-          top: ot
-        };
-      },
+		    _offset: function (obj) {
+				// TODO: Need to find a better solution to fix vertical sliders
+				if(this.options.orientation === "vertical") {
+					return {
+                        left: obj.offsetLeft,
+                        top: obj.offsetTop
+                    };
+				}
+				else {
+					var rect = obj.getBoundingClientRect(),
+					ol = rect.left,
+					ot = rect.top;
+					return {
+						left: ol,
+						top: ot
+					};
+				}
+		    },
 			_css: function(elementRef, styleName, value) {
                 if ($) {
                     $.style(elementRef, styleName, value);
